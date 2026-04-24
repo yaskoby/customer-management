@@ -1,0 +1,6 @@
+from snack_crm.ui import create_app
+
+
+if __name__ == "__main__":
+    app = create_app()
+    app.mainloop()
