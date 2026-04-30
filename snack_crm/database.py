@@ -5,6 +5,13 @@ from pathlib import Path
 from typing import Iterable
 
 
+class ManagedConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback) -> bool | None:
+        should_suppress = super().__exit__(exc_type, exc_value, traceback)
+        self.close()
+        return should_suppress
+
+
 SCHEMA_STATEMENTS: tuple[str, ...] = (
     """
     CREATE TABLE IF NOT EXISTS customers (
@@ -33,7 +40,7 @@ class DatabaseManager:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(self.db_path)
+        connection = sqlite3.connect(self.db_path, factory=ManagedConnection)
         connection.row_factory = sqlite3.Row
         return connection
 
@@ -94,4 +101,3 @@ class DatabaseManager:
             demo_rows,
         )
         connection.commit()
-

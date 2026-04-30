@@ -28,6 +28,7 @@ class SnackCRMApp(tk.Tk):
         super().__init__()
         self.service = service
         self.selected_customer_id: int | None = None
+        self._updating_tree_selection = False
         self.title("Snack CRM Studio")
         self.geometry("1400x860")
         self.minsize(1240, 760)
@@ -216,6 +217,7 @@ class SnackCRMApp(tk.Tk):
             self.tree.column(key, width=widths[key], anchor=anchors[key])
         self.tree.pack(fill="both", expand=True)
         self.tree.bind("<<TreeviewSelect>>", self._on_tree_selected)
+        self.tree.bind("<Return>", self._on_tree_selected)
 
         toolbar = ttk.Frame(parent, style="Panel.TFrame")
         toolbar.pack(fill="x", pady=(14, 0))
@@ -230,15 +232,66 @@ class SnackCRMApp(tk.Tk):
         )
 
     def _build_editor(self, parent: ttk.Frame) -> None:
-        ttk.Label(parent, text="顧客編集", style="PanelTitle.TLabel").pack(anchor="w")
+        parent.columnconfigure(0, weight=1)
+        parent.rowconfigure(3, weight=1)
+
+        ttk.Label(parent, text="顧客編集", style="PanelTitle.TLabel").grid(row=0, column=0, sticky="w")
         ttk.Label(
             parent,
             text="登録・編集・メモ更新・来店カウント調整",
             style="FormLabel.TLabel",
-        ).pack(anchor="w", pady=(4, 16))
+        ).grid(row=1, column=0, sticky="w", pady=(4, 12))
 
-        form = ttk.Frame(parent, style="PanelAlt.TFrame")
-        form.pack(fill="both", expand=True)
+        info = ttk.Frame(parent, style="PanelAlt.TFrame")
+        info.grid(row=2, column=0, sticky="ew", pady=(0, 14))
+        self.detail_title = tk.Label(
+            info,
+            text="顧客を選択すると詳細が表示されます",
+            bg=self.PANEL_ALT,
+            fg="white",
+            font=("Yu Gothic UI Semibold", 12),
+            anchor="w",
+        )
+        self.detail_title.pack(fill="x")
+        self.detail_body = tk.Label(
+            info,
+            text="LINE配信管理は `CustomerService` に Gateway を差し替えるだけで拡張できる構成です。",
+            bg=self.PANEL_ALT,
+            fg=self.MUTED,
+            justify="left",
+            anchor="w",
+            font=("Yu Gothic UI", 10),
+            wraplength=420,
+        )
+        self.detail_body.pack(fill="x", pady=(8, 0))
+
+        scroll_area = ttk.Frame(parent, style="PanelAlt.TFrame")
+        scroll_area.grid(row=3, column=0, sticky="nsew")
+        scroll_area.columnconfigure(0, weight=1)
+        scroll_area.rowconfigure(0, weight=1)
+
+        canvas = tk.Canvas(scroll_area, bg=self.PANEL_ALT, highlightthickness=0, borderwidth=0)
+        scrollbar = ttk.Scrollbar(scroll_area, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        form = ttk.Frame(canvas, style="PanelAlt.TFrame")
+        form_window = canvas.create_window((0, 0), window=form, anchor="nw")
+
+        def sync_scroll_region(_event=None) -> None:
+            canvas.configure(scrollregion=canvas.bbox("all"))
+
+        def sync_form_width(event) -> None:
+            canvas.itemconfigure(form_window, width=event.width)
+
+        def on_mousewheel(event) -> None:
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        form.bind("<Configure>", sync_scroll_region)
+        canvas.bind("<Configure>", sync_form_width)
+        canvas.bind("<Enter>", lambda _event: canvas.bind_all("<MouseWheel>", on_mousewheel))
+        canvas.bind("<Leave>", lambda _event: canvas.unbind_all("<MouseWheel>"))
 
         self.form_vars = {
             "name": tk.StringVar(),
@@ -265,7 +318,7 @@ class SnackCRMApp(tk.Tk):
         ttk.Label(form, text="メモ", style="FormLabel.TLabel").pack(anchor="w", pady=(0, 6))
         self.memo_text = tk.Text(
             form,
-            height=10,
+            height=6,
             bg="white",
             fg="#0F172A",
             insertbackground="#0F172A",
@@ -274,39 +327,16 @@ class SnackCRMApp(tk.Tk):
             pady=12,
             font=("Yu Gothic UI", 10),
         )
-        self.memo_text.pack(fill="both", expand=True)
+        self.memo_text.pack(fill="x")
 
-        action_row = ttk.Frame(form, style="PanelAlt.TFrame")
-        action_row.pack(fill="x", pady=(16, 0))
+        action_row = ttk.Frame(parent, style="PanelAlt.TFrame")
+        action_row.grid(row=4, column=0, sticky="ew", pady=(16, 0))
         ttk.Button(action_row, text="保存", style="Primary.TButton", command=self._save_customer).pack(
             side="left"
         )
         ttk.Button(action_row, text="フォーム初期化", style="Secondary.TButton", command=self._reset_form).pack(
             side="left", padx=(10, 0)
         )
-
-        info = ttk.Frame(parent, style="PanelAlt.TFrame")
-        info.pack(fill="x", pady=(18, 0))
-        self.detail_title = tk.Label(
-            info,
-            text="顧客を選択すると詳細が表示されます",
-            bg=self.PANEL_ALT,
-            fg="white",
-            font=("Yu Gothic UI Semibold", 12),
-            anchor="w",
-        )
-        self.detail_title.pack(fill="x")
-        self.detail_body = tk.Label(
-            info,
-            text="LINE配信管理は `CustomerService` に Gateway を差し替えるだけで拡張できる構成です。",
-            bg=self.PANEL_ALT,
-            fg=self.MUTED,
-            justify="left",
-            anchor="w",
-            font=("Yu Gothic UI", 10),
-            wraplength=420,
-        )
-        self.detail_body.pack(fill="x", pady=(8, 0))
 
     def refresh_all(self) -> None:
         self._render_stats()
@@ -429,6 +459,8 @@ class SnackCRMApp(tk.Tk):
         self._select_customer(customer_id)
 
     def _on_tree_selected(self, _event) -> None:
+        if self._updating_tree_selection:
+            return
         customer_id = self._selected_tree_customer_id()
         if customer_id is None:
             return
@@ -464,8 +496,18 @@ class SnackCRMApp(tk.Tk):
         )
         item_id = str(customer.id)
         if item_id in self.tree.get_children():
+            self._set_tree_selection(item_id)
+
+    def _set_tree_selection(self, item_id: str) -> None:
+        if self.tree.selection() == (item_id,) and self.tree.focus() == item_id:
+            return
+        self._updating_tree_selection = True
+        try:
             self.tree.selection_set(item_id)
             self.tree.focus(item_id)
+            self.tree.see(item_id)
+        finally:
+            self._updating_tree_selection = False
 
     @staticmethod
     def _describe_dormancy(last_visit_date: date | None) -> str:
